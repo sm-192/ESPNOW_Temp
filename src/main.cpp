@@ -1,10 +1,14 @@
 // =======================================================
 // Definição de papel via build_flags
 // =======================================================
-#if defined(TRANSMISSOR)
+#if defined(ESP8266_TX)
   #define ROLE "TRANSMISSOR"
-#elif defined(RECEPTOR)
+#elif defined(ESP8266_RX)
   #define ROLE "RECEPTOR"
+#elif defined(ESP8266_MAC)
+  #define ROLE "ESP8266_MAC"
+#elif defined(ESP32_MAC)
+  #define ROLE "ESP32_MAC"
 #else
   #error "Nenhum papel definido! Use -DTRANSMISSOR ou -DRECEPTOR."
 #endif
@@ -25,7 +29,7 @@ struct SensorData {
 // =======================================================
 // ===============  BLOCO TRANSMISSOR ====================
 // =======================================================
-#if defined(TRANSMISSOR)
+#if defined(ESP8266_TX)
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -40,18 +44,27 @@ DallasTemperature sensors(&oneWire);
 
 // MAC do receptor (ajustar conforme sua rede)
 #ifndef MAC_RX
-  #define MAC_RX {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}  // fallback
+  #define MAC_RX {MAC_RX_0, MAC_RX_1, MAC_RX_2, MAC_RX_3, MAC_RX_4, MAC_RX_5}  // fallback
 #endif
 
-uint8_t centralMac[6] = MAC_RX
+uint8_t mac_rx[6] = MAC_RX;
 
 // Conversões de tempo
 uint64_t secondsToUs(uint32_t s) { return (uint64_t)s * 1000000ULL; }
 uint64_t minutesToUs(uint32_t m) { return (uint64_t)m * 60ULL * 1000000ULL; }
 uint64_t hoursToUs(uint32_t h)   { return (uint64_t)h * 3600ULL * 1000000ULL; }
 
-// Intervalo de envio
-const uint64_t SEND_INTERVAL = secondsToUs(10); // 10 segundos
+#if INTERVALO == SEGUNDOS
+  const uint64_t SEND_INTERVAL = secondsToUs(TEMPO);
+#elif INTERVALO == MINUTOS
+  const uint64_t SEND_INTERVAL = minutesToUs(TEMPO);
+#elif INTERVALO == HORAS
+  const uint64_t INTERVALO = hoursToUs(TEMPO);
+#else
+  #error "INTERVALO inválido! Use SEGUNDOS, MINUTOS ou HORAS."
+#endif
+
+
 
 void setup() {
   Serial.begin(115200);
@@ -65,7 +78,7 @@ void setup() {
   }
 
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-  esp_now_add_peer(centralMac, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+  esp_now_add_peer(mac_rx, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
 
   sensors.begin();
   sensors.setResolution(12); // máxima precisão
@@ -79,7 +92,7 @@ void setup() {
   data.nodeId = NODE_ID;
   data.temp = temp;
 
-  esp_now_send(centralMac, (uint8_t*)&data, sizeof(data));
+  esp_now_send(mac_rx, (uint8_t*)&data, sizeof(data));
   Serial.printf("Enviado: ID=%d Temp=%.2f°C\n", data.nodeId, data.temp);
 
   // Light sleep até próxima leitura
@@ -91,7 +104,7 @@ void setup() {
 }
 
 void loop() {
-  // nada, o ESP acorda sozinho
+  // nada, o ESP acorda sozinhoD
 }
 
 #endif // TRANSMISSOR
@@ -100,7 +113,7 @@ void loop() {
 // =======================================================
 // ===============  BLOCO RECEPTOR =======================
 // =======================================================
-#if defined(RECEPTOR)
+#if defined(ESP8266_RX)
 
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -111,6 +124,10 @@ void loop() {
 
 #define LED_PIN 2 // LED interno
 #define ONEWIRE_PIN D2   // pino do DS18B20
+
+#ifndef QTDE_TX
+  #define QTDE_TX 1   // valor padrão, caso não seja definido no build_flags
+#endif
 
 RTC_DS3231 rtc;
 ESP8266WebServer server(80);
@@ -229,7 +246,7 @@ void loop() {
 
     sensors.requestTemperatures();
     float ambientTemp = sensors.getTempCByIndex(0);
-    Serial.printf("Temperatura ambiente: %.2f°C\n", ambientTemp);
+    //Serial.printf("Temperatura ambiente: %.2f°C\n", ambientTemp);
 
     // Opcional: salvar no log.txt
     DateTime now = rtc.now();
@@ -247,6 +264,9 @@ void loop() {
 
 #endif // RECEPTOR
 
+// =======================================================
+// ===============  BLOCO MAC ESP8266 ====================
+// =======================================================
 #if defined(ESP8266_MAC)
 
   #include <ESP8266WiFi.h>
@@ -263,8 +283,10 @@ void loop() {
 
 #endif // ESP8266_MAC
 
-
-#if defined(ESP8266_MAC)
+// =======================================================
+// ================  BLOCO MAC ESP32 =====================
+// =======================================================
+#if defined(ESP32_MAC)
   #include <WiFi.h>
 
   void setup(){
