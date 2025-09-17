@@ -8,20 +8,22 @@
   #include <esp_now.h>
 #endif
 
+// Estrutura de dados comum
+struct SensorData {
+  uint8_t nodeId;
+  float temp;
+};
+
 #if defined(ESP8266_TX)
   #include "esp8266_tx.h"
 #elif defined(ESP8266_RX)
   #include "esp8266_rx.h"
 #elif defined(ESP8266_MAC)
   #include "esp8266_mac.h"
+#elif defined(ESP8266_RTC)
+  #include "esp8266_rtc.h"
 #elif defined(ESP32_MAC)
   #include "esp32_mac.h"
 #else
   #error "Nenhum papel definido! Use -DTRANSMISSOR ou -DRECEPTOR."
 #endif
-
-// Estrutura de dados comum
-struct SensorData {
-  uint8_t nodeId;
-  float temp;
-};

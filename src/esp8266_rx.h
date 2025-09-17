@@ -5,147 +5,213 @@
     #include <DallasTemperature.h>
     #include <Wire.h>
     #include <RTClib.h>
-    #include <FS.h>             
+    #include <LittleFS.h>             
     #include <ESP8266WebServer.h>
+    #include <Arduino.h>
 
-    #define LED_PIN 2 // LED interno
-    #define ONEWIRE_PIN D2   // pino do DS18B20
-
-    #ifndef QTDE_TX
-    #define QTDE_TX 1   // valor padrão, caso não seja definido no build_flags
+    #ifndef TEMP_MIN
+    #define TEMP_MIN 5.0
     #endif
+    #ifndef TEMP_MAX
+    #define TEMP_MAX 10.0
+    #endif
+
+    // --------------------
+    // Hardware e objetos
+    // --------------------
+    #define LED_PIN 2
+    #define ONEWIRE_PIN D2
+    #define FLASH_BTN 0  // GPIO0 (botão FLASH)
+    #define TIMEOUT_MS 20000
+
+    unsigned long lastRecvTime = 0;
 
     RTC_DS3231 rtc;
     ESP8266WebServer server(80);
     OneWire oneWire(ONEWIRE_PIN);
     DallasTemperature sensors(&oneWire);
 
-    // SSID e senha do AP
     const char* ssid = "RECEPTOR";
     const char* password = "12345678";
 
+    // --------------------
+    // Funções auxiliares
+    // --------------------
     String pad2(int value) {
-    return (value < 10 ? "0" : "") + String(value);
+        return (value < 10 ? "0" : "") + String(value);
     }
 
-    // Função callback quando recebe dados
-    void onDataRecv(uint8_t *mac, uint8_t *incomingData, uint8_t len) {
-    if(len != sizeof(SensorData)) return;
+    // Contagem de estações e estado de transição
+    int receivedCount = 0;
+    bool stateLow[6] = {false};
+    bool stateHigh[6] = {false};
 
-    SensorData data;
-    memcpy(&data, incomingData, sizeof(data));
+    // --------------------
+    // Função de log (sensores e ambiente)
+    // --------------------
+    void logEntryWithAlert(const String &entry, uint8_t nodeId = 255, float temp = NAN) {
+        String logEntry = entry;
 
-    // Pisca LED
-    digitalWrite(LED_PIN, HIGH);
-    delay(100);
-    digitalWrite(LED_PIN, LOW);
-
-    // Pega horário atual
-    DateTime now = rtc.now();
-
-    // Cria a string de log
-    String logEntry = pad2(now.day()) + "/" + pad2(now.month()) + "/" + String(now.year()) + " ";
-    logEntry += pad2(now.hour()) + ":" + pad2(now.minute()) + ":" + pad2(now.second());
-    logEntry += " - Cx: " + String(data.nodeId) + " | Temp: " + String(data.temp, 2) + " Graus\n";
-
-    // Mostra na serial
-    Serial.print(logEntry);
-
-    // Salva no log.txt
-    File logFile = SPIFFS.open("/log.txt", "a");
-    if(logFile){
-        logFile.print(logEntry);
-        logFile.close();
-    }
-    else {
-        Serial.println("Erro ao abrir log.txt");
-    }
-    }
-
-    // Rota para exibir o log
-    void handleLog() {
-    if(SPIFFS.exists("/log.txt")) {
-        File logFile = SPIFFS.open("/log.txt", "r");
-        if(logFile){
-        server.streamFile(logFile, "text/plain");
-        logFile.close();
+        if (!isnan(temp) && nodeId < 6) { 
+            if (temp < TEMP_MIN && !stateLow[nodeId]) {
+                logEntry += " <<< ALERTA: abaixo de " + String(TEMP_MIN) + "°C!";
+                stateLow[nodeId] = true;
+                stateHigh[nodeId] = false;
+            } else if (temp > TEMP_MAX && !stateHigh[nodeId]) {
+                logEntry += " <<< ALERTA: acima de " + String(TEMP_MAX) + "°C!";
+                stateHigh[nodeId] = true;
+                stateLow[nodeId] = false;
+            } else if (temp >= TEMP_MIN && temp <= TEMP_MAX) {
+                if (stateLow[nodeId] || stateHigh[nodeId]) {
+                    logEntry += " <<< NORMALIZADO";
+                }
+                stateLow[nodeId] = false;
+                stateHigh[nodeId] = false;
+            }
         }
-    } else {
-        server.send(200, "text/plain", "Nenhum log encontrado.");
-    }
+
+        Serial.println(logEntry);
+
+        // Salva no log.txt
+        File logFile = LittleFS.open("/log.txt", "a");
+        if(logFile){
+            logFile.println(logEntry);
+            logFile.close();
+        }
+
+        // Contagem de estações
+        if (!isnan(temp) && nodeId < 6) {
+            receivedCount++;
+            if (receivedCount >= QTDE_TX) {
+                Serial.println("--------------------------------------");
+                receivedCount = 0;
+            }
+        }
     }
 
+    // --------------------
+    // Callback ESP-NOW
+    // --------------------
+    void onDataRecv(uint8_t *mac, uint8_t *incomingData, uint8_t len) {
+        if(len != sizeof(SensorData)) return;
+
+        SensorData data;
+        memcpy(&data, incomingData, sizeof(data));
+
+        lastRecvTime = millis();
+
+        // Pisca LED
+        digitalWrite(LED_PIN, HIGH);
+        delay(100);
+        digitalWrite(LED_PIN, LOW);
+
+        DateTime now = rtc.now();
+        String entry = pad2(now.day()) + "/" + pad2(now.month()) + "/" + String(now.year()) + " ";
+        entry += pad2(now.hour()) + ":" + pad2(now.minute()) + ":" + pad2(now.second());
+        entry += " - Cx: " + String(data.nodeId) + " | Temp: " + String(data.temp, 2) + " °C";
+
+        logEntryWithAlert(entry, data.nodeId, data.temp);
+    }
+
+    // --------------------
+    // Rota web /log
+    // --------------------
+    void handleLog() {
+        if(LittleFS.exists("/log.txt")) {
+            File logFile = LittleFS.open("/log.txt", "r");
+            if(logFile){
+                server.streamFile(logFile, "text/plain");
+                logFile.close();
+            }
+        } else {
+            server.send(200, "text/plain", "Nenhum log encontrado.");
+        }
+    }
+
+    // --------------------
+    // Setup e loop
+    // --------------------
     void setup() {
-    Serial.begin(115200);
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW);
+        Serial.begin(115200);
+        pinMode(LED_PIN, OUTPUT);
+        digitalWrite(LED_PIN, LOW);
 
-    // Inicia RTC
-    if (!rtc.begin()) {
-        Serial.println("Erro: RTC DS3231 não encontrado!");
-        while (1);
-    }
+        pinMode(FLASH_BTN, INPUT_PULLUP);
 
-    // Inicia SPIFFS
-    if(!SPIFFS.begin()){
-        Serial.println("Falha ao montar SPIFFS");
-        return;
-    }
+        if (!rtc.begin()) {
+            Serial.println("Erro: RTC DS3231 não encontrado!");
+            while (1);
+        }
 
-    // Inicia DS18B20
-    sensors.begin();
-    sensors.setResolution(12);
+        if(!LittleFS.begin()){
+            Serial.println("Falha ao montar LittleFS");
+            return;
+        }
 
-    // Configura como Access Point
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.softAP(ssid, password);
-    WiFi.disconnect();
-    Serial.print("AP iniciado. Conecte-se em: ");
-    Serial.println(WiFi.softAPIP());
+        sensors.begin();
+        sensors.setResolution(12);
 
-    // Inicia servidor web
-    server.on("/", [](){
-        server.send(200, "text/html", "<h1>Servidor ESP8266</h1><p><a href=\"/log\">Ver log</a></p>");
-    });
-    server.on("/log", handleLog);
-    server.begin();
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.softAP(ssid, password);
+        WiFi.disconnect();
+        Serial.print("AP iniciado. Conecte-se em: ");
+        Serial.println(WiFi.softAPIP());
 
-    // Inicializa ESP-NOW
-    if (esp_now_init() != 0) {
-        Serial.println("Erro ESP-NOW");
-        return;
-    }
+        server.on("/", [](){
+            server.send(200, "text/html", "<h1>Servidor ESP8266</h1><p><a href=\"/log\">Ver log</a></p>");
+        });
+        server.on("/log", handleLog);
+        server.begin();
 
-    esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
-    esp_now_register_recv_cb(onDataRecv);
+        if (esp_now_init() != 0) {
+            Serial.println("Erro ESP-NOW");
+            return;
+        }
 
-    Serial.println("Pronto para receber dados...");
+        esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
+        esp_now_register_recv_cb(onDataRecv);
+
+        Serial.println("Pronto para receber dados...");
     }
 
     void loop() {
-    server.handleClient();
+        server.handleClient();
 
-    // Leitura da temperatura ambiente a cada 10 segundos
-    static uint32_t lastRead = 0;
-    if (millis() - lastRead > 10000) {  // 10 segundos
-        lastRead = millis();
+        // Botão FLASH para zerar log
+        if (digitalRead(FLASH_BTN) == LOW) {
+            Serial.println("Botão FLASH pressionado: log zerado.");
+            if(LittleFS.exists("/log.txt")) LittleFS.remove("/log.txt");
+            delay(500); // debounce simples
+        }
 
-        sensors.requestTemperatures();
-        float ambientTemp = sensors.getTempCByIndex(0);
-        //Serial.printf("Temperatura ambiente: %.2f°C\n", ambientTemp);
+        // Timeout das estações
+        if (receivedCount > 0 && millis() - lastRecvTime > TIMEOUT_MS) {
+            Serial.println("-------------------------------------- (timeout)");
+            receivedCount = 0;
+            lastRecvTime = millis(); // reseta o timer
+        }
 
-        // Opcional: salvar no log.txt
-        DateTime now = rtc.now();
-        String logEntry = pad2(now.day()) + "/" + pad2(now.month()) + "/" + String(now.year()) + " ";
-        logEntry += pad2(now.hour()) + ":" + pad2(now.minute()) + ":" + pad2(now.second());
-        logEntry += " - Ambiente: " + String(ambientTemp, 2) + "°C\n";
+        // --------------------
+        // Leitura temperatura ambiente **antes** das estações
+        // --------------------
+        static bool ambientLogged = false;
+        if (!ambientLogged && receivedCount == 0) {
+            sensors.requestTemperatures();
+            float ambientTemp = sensors.getTempCByIndex(0);
 
-        File logFile = SPIFFS.open("/log.txt", "a");
-        if(logFile){
-        logFile.print(logEntry);
-        logFile.close();
+            DateTime now = rtc.now();
+            String entry = pad2(now.day()) + "/" + pad2(now.month()) + "/" + String(now.year()) + " ";
+            entry += pad2(now.hour()) + ":" + pad2(now.minute()) + ":" + pad2(now.second());
+            entry += " - Ambiente: " + String(ambientTemp, 2) + " °C";
+
+            logEntryWithAlert(entry, 255, ambientTemp); // 255 indica que não é uma estação específica
+            ambientLogged = true; // só registra uma vez antes das estações
+        }
+
+        // Reseta flag quando todas as estações tiverem enviado
+        if (receivedCount == 0) {
+            ambientLogged = false;
         }
     }
-    }
 
-#endif // RECEPTOR
+#endif // ESP8266_RX_H
