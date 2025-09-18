@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 #if defined(ESP8266_TX) || defined(ESP8266_RX) || defined(ESP8266_MAC)
   #include <ESP8266WiFi.h>
@@ -8,9 +10,11 @@
   #include <esp_now.h>
 #endif
 
+#define ONEWIRE_PIN D2   // pino do DS18B20
+
 // Estrutura de dados comum
 struct SensorData {
-  uint8_t nodeId;
+  char nome_tx[16];
   float temp;
 };
 

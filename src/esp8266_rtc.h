@@ -27,8 +27,8 @@
 
 
     // Connect to WiFi
-    char* ssid = "ELETROGATE_Externa"; // Replace with your WiFi SSID
-    char* password = "lojamaker"; // Replace with your WiFi password
+    char* ssid = NOME_REDE; // Replace with your WiFi SSID
+    char* password = SENHA; // Replace with your WiFi password
     WiFi.begin(ssid, password);
 
 

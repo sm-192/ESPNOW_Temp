@@ -1,13 +1,6 @@
 #ifndef ESP8266_TX_H
 #define ESP8266_TX_H
 
-    #include <OneWire.h>
-    #include <DallasTemperature.h>
-
-    #define ONEWIRE_PIN D2   // pino do DS18B20
-    #ifndef NODE_ID
-    #define NODE_ID "caixa"   // valor padrão, caso não seja definido no build_flags
-    #endif
 
     // Configura DS18B20
     OneWire oneWire(ONEWIRE_PIN);
@@ -36,40 +29,42 @@
     #endif
 
     void setup() {
-    Serial.begin(115200);
+        Serial.begin(115200);
 
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.disconnect();
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.disconnect();
 
-    if (esp_now_init() != 0) {
-        Serial.println("Erro ao iniciar ESP-NOW");
-        return;
-    }
+        if (esp_now_init() != 0) {
+            Serial.println("Erro ao iniciar ESP-NOW");
+            return;
+        }
 
-    esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
-    esp_now_add_peer(mac_rx, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+        esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+        esp_now_add_peer(mac_rx, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
 
-    sensors.begin();
-    sensors.setResolution(12); // máxima precisão
+        sensors.begin();
+        sensors.setResolution(12); // máxima precisão
 
-    // Faz a leitura do sensor
-    sensors.requestTemperatures();
-    float temp = sensors.getTempCByIndex(0);
-    temp = round(temp * 100.0) / 100.0;
+        SensorData data = {};
+        strncpy(data.nome_tx, TX_ID, sizeof(data.nome_tx));
+        data.nome_tx[sizeof(data.nome_tx)-1] = '\0';
 
-    SensorData data;
-    data.nodeId = NODE_ID;
-    data.temp = temp;
+        // Faz a leitura do sensor
+        sensors.requestTemperatures();
+        float temp = sensors.getTempCByIndex(0);
+        temp = round(temp * 100.0) / 100.0;
 
-    esp_now_send(mac_rx, (uint8_t*)&data, sizeof(data));
-    Serial.printf("Enviado: ID=%d Temp=%.2f°C\n", data.nodeId, data.temp);
+        data.temp = temp;
+        
+        esp_now_send(mac_rx, (uint8_t*)&data, sizeof(data));
+        Serial.printf("Enviado: ID=%s Temp=%.2f°C\n", data.nome_tx, data.temp);
 
-    // Light sleep até próxima leitura
-    Serial.printf("Dormindo por %.2f segundos...\n", (double)SEND_INTERVAL / 1e6);
+        // Light sleep até próxima leitura
+        Serial.printf("Dormindo por %.2f segundos...\n", (double)SEND_INTERVAL / 1e6);
 
-    WiFi.forceSleepBegin(); // WiFi em sleep
-    delay(1);
-    system_deep_sleep(SEND_INTERVAL); // acorda pelo timer
+        WiFi.forceSleepBegin(); // WiFi em sleep
+        delay(1);
+        system_deep_sleep(SEND_INTERVAL); // acorda pelo timer
     }
 
     void loop() {
