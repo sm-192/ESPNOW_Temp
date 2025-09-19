@@ -9,7 +9,7 @@
   #include <TimeLib.h>  
 
 
-  RTC_DS3231 rtc;
+  RTC_DS1307 rtc;
   WiFiUDP ntpUDP;
   NTPClient timeClient(ntpUDP, "br.pool.ntp.org", -10800, 60000);
 
@@ -23,7 +23,7 @@
   {
     Serial.begin(115200);  // Initialize serial communication with a baud rate of 9600
     Wire.begin();  // Begin I2C communication
-    rtc.begin();  // Initialize DS3231 RTC module
+    rtc.begin();  // Initialize DS1307 RTC module
 
 
     // Connect to WiFi

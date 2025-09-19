@@ -5,6 +5,8 @@
     #include <RTClib.h>
     #include <LittleFS.h>
     #include <ESP8266WebServer.h>
+    #include <SD.h>
+    #include <SPI.h>
 
     #ifndef QTDE_TX
         #define QTDE_TX 1
@@ -18,11 +20,12 @@
 
     #define LED_PIN 2
     #define FLASH_BTN 0  // GPIO0 (botão FLASH)
+    #define SD_CS_PIN 15 // GPIO15 (pino CS do SD)
 
     // Lista de nomes a partir do PlatformIO.ini
     #define LISTA_TX {NOME_TX1,NOME_TX2,NOME_TX3,NOME_TX4,NOME_TX5,NOME_TX6,NOME_TX7,NOME_TX8,NOME_TX9,NOME_TX10}
 
-    RTC_DS3231 rtc;
+    RTC_DS1307 rtc;
     ESP8266WebServer server(80);
     OneWire oneWire(ONEWIRE_PIN);
     DallasTemperature sensors(&oneWire);
@@ -57,6 +60,12 @@
         if (logFile) {
             logFile.println(entry);
             logFile.close();
+        }
+
+        File sdFile = SD.open("/log.txt", FILE_WRITE);
+        if (sdFile) {
+            sdFile.println(entry);
+            sdFile.close();
         }
     }
 
@@ -177,13 +186,19 @@
         pinMode(FLASH_BTN, INPUT_PULLUP);
 
         if (!rtc.begin()) {
-            Serial.println("Erro: RTC DS3231 não encontrado!");
+            Serial.println("Erro: RTC DS1307 não encontrado!");
             while (1);
         }
 
         if (!LittleFS.begin()) {
             Serial.println("Falha ao montar LittleFS");
             return;
+        }
+
+        if (!SD.begin(SD_CS_PIN)) {
+            Serial.println("Falha ao inicializar o cartão SD.");
+        } else {
+            Serial.println("Cartão SD pronto.");
         }
 
         sensors.begin();
@@ -228,6 +243,7 @@
         if (digitalRead(FLASH_BTN) == LOW) {
             Serial.println("Botão FLASH pressionado: log zerado.");
             if (LittleFS.exists("/log.txt")) LittleFS.remove("/log.txt");
+            if (SD.exists("/log.txt")) SD.remove("/log.txt");
             delay(500); // debounce
         }
 
