@@ -4,7 +4,6 @@
 // --------------------
 // Configurações do sensor
 // --------------------
-#define ONEWIRE_PIN 4   // Ajuste conforme sua placa
 OneWire oneWire(ONEWIRE_PIN);
 DallasTemperature sensors(&oneWire);
 
@@ -32,14 +31,6 @@ const uint64_t SEND_INTERVAL = hoursToUs(TEMPO);
 #else
 #error "INTERVALO inválido! Use SEGUNDOS, MINUTOS ou HORAS."
 #endif
-
-// --------------------
-// Estrutura de dados
-// --------------------
-struct SensorData {
-    char nome_tx[16];
-    float temp;
-};
 
 // --------------------
 // Setup

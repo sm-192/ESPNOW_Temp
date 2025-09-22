@@ -18,7 +18,6 @@
         #define TEMP_MAX 10.0
     #endif
 
-    #define LED_PIN 2
     #define FLASH_BTN 0  // GPIO0 (botão FLASH)
     #define SD_CS_PIN 15 // GPIO15 (pino CS do SD)
 
@@ -154,11 +153,6 @@
             receivedCount++;
             logStation(data.nome_tx, data.temp);
         }
-
-        // Pisca LED
-        digitalWrite(LED_PIN, HIGH);
-        delay(50);
-        digitalWrite(LED_PIN, LOW);
     }
 
     // --------------------
@@ -181,8 +175,6 @@
     // --------------------
     void setup() {
         Serial.begin(115200);
-        pinMode(LED_PIN, OUTPUT);
-        digitalWrite(LED_PIN, LOW);
         pinMode(FLASH_BTN, INPUT_PULLUP);
 
         if (!rtc.begin()) {

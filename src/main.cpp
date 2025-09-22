@@ -1,12 +1,15 @@
 #include <Arduino.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <ESPAsyncWebServer.h>
 
 #if defined(ESP8266_TX) || defined(ESP8266_RX) || defined(ESP8266_MAC)
   #include <ESP8266WiFi.h>
+  #include <ESPAsyncTCP.h>
   #include <espnow.h>
   #define ONEWIRE_PIN D2   // pino do DS18B20
 #elif defined(ESP32_TX) || defined(ESP32_RX) || defined(ESP32_MAC)
+  #include <AsyncTCP.h>
   #include <WiFi.h>
   #include <esp_now.h>
   #define ONEWIRE_PIN 32   // pino do DS18B20
