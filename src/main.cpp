@@ -5,12 +5,12 @@
 #if defined(ESP8266_TX) || defined(ESP8266_RX) || defined(ESP8266_MAC)
   #include <ESP8266WiFi.h>
   #include <espnow.h>
+  #define ONEWIRE_PIN D2   // pino do DS18B20
 #elif defined(ESP32_TX) || defined(ESP32_RX) || defined(ESP32_MAC)
   #include <WiFi.h>
   #include <esp_now.h>
+  #define ONEWIRE_PIN 32   // pino do DS18B20
 #endif
-
-#define ONEWIRE_PIN D2   // pino do DS18B20
 
 // Estrutura de dados comum
 struct SensorData {
@@ -28,6 +28,12 @@ struct SensorData {
   #include "esp8266_rtc.h"
 #elif defined(ESP32_MAC)
   #include "esp32_mac.h"
+#elif defined(ESP32_TX)
+  #include "esp32_tx.h"
+#elif defined(ESP32_RX)
+  #include "esp32_rx.h"
+#elif defined(ESP32_RTC)
+  #include "esp32_rtc.h"
 #else
   #error "Nenhum papel definido! Use -DTRANSMISSOR ou -DRECEPTOR."
 #endif

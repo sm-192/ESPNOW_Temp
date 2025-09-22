@@ -1,7 +1,6 @@
 #ifndef ESP8266_TX_H
 #define ESP8266_TX_H
 
-
     // Configura DS18B20
     OneWire oneWire(ONEWIRE_PIN);
     DallasTemperature sensors(&oneWire);
