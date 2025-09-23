@@ -18,15 +18,15 @@ uint8_t mac_rx[6] = MAC_RX;
 // --------------------
 // Intervalos de envio
 // --------------------
-uint64_t secondsToUs(uint32_t s) { return (uint64_t)s * 1000000ULL; }
-uint64_t minutesToUs(uint32_t m) { return (uint64_t)m * 60ULL * 1000000ULL; }
-uint64_t hoursToUs(uint32_t h)   { return (uint64_t)h * 3600ULL * 1000000ULL; }
+uint64_t secondsToUs(uint32_t s) { return static_cast<uint64_t>(s) * 1000000ULL; }
+uint64_t minutesToUs(uint32_t m) { return static_cast<uint64_t>(m) * 60ULL * 1000000ULL; }
+uint64_t hoursToUs(uint32_t h)   { return static_cast<uint64_t>(h) * 3600ULL * 1000000ULL; }
 
-#if INTERVALO == SEGUNDOS
+#if INTERVALO == SEGUNDO || INTERVALO == SEGUNDOS
 const uint64_t SEND_INTERVAL = secondsToUs(TEMPO);
-#elif INTERVALO == MINUTOS
+#elif INTERVALO == MINUTO || INTERVALO == MINUTOS
 const uint64_t SEND_INTERVAL = minutesToUs(TEMPO);
-#elif INTERVALO == HORAS
+#elif INTERVALO == HORA || INTERVALO == HORAS
 const uint64_t SEND_INTERVAL = hoursToUs(TEMPO);
 #else
 #error "INTERVALO inválido! Use SEGUNDOS, MINUTOS ou HORAS."
@@ -47,10 +47,12 @@ void setup() {
     }
 
     // Adiciona peer (receptor)
-    esp_now_peer_info_t peerInfo = {};
+    esp_now_peer_info_t peerInfo;
+    memset(&peerInfo, 0, sizeof(peerInfo));
     memcpy(peerInfo.peer_addr, mac_rx, 6);
-    peerInfo.channel = 0;  
+    peerInfo.channel = 1;           // canal do receptor (confira no RX)
     peerInfo.encrypt = false;
+    peerInfo.ifidx = WIFI_IF_STA;   // obrigatório no ESP32
 
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
         Serial.println("Falha ao adicionar peer");

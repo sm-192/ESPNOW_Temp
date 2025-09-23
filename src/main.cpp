@@ -8,7 +8,7 @@
   #include <ESPAsyncTCP.h>
   #include <espnow.h>
   #define ONEWIRE_PIN D2   // pino do DS18B20
-#elif defined(ESP32_TX) || defined(ESP32_RX) || defined(ESP32_MAC)
+#elif defined(ESP32_TX) || defined(ESP32_RX) || defined(ESP32_MAC) 
   #include <AsyncTCP.h>
   #include <WiFi.h>
   #include <esp_now.h>

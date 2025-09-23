@@ -3,6 +3,7 @@
 
 #include <Wire.h>
 #include <RTClib.h>
+#include <WiFi.h>
 #include <WiFiUdp.h>
 #include <NTPClient.h>
 #include <TimeLib.h>  

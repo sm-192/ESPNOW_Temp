@@ -51,20 +51,35 @@
         return (value < 10 ? "0" : "") + String(value);
     }
 
+
     void writeLog(const String &entry) {
         Serial.println(entry);
+
+        // ---------------- LittleFS ----------------
         File logFile = LittleFS.open("/log.txt", "a");
         if (logFile) {
             logFile.println(entry);
+            logFile.flush();  // força escrita imediata
             logFile.close();
+        } else {
+            Serial.println("Erro ao abrir /log.txt no LittleFS");
         }
 
-        File sdFile = SD.open("/log.txt", FILE_WRITE);
-        if (sdFile) {
-            sdFile.println(entry);
-            sdFile.close();
+        // ---------------- SD Card ----------------
+        if (SD.begin(SD_CS_PIN)) {  // garante inicialização do SD
+            File sdFile = SD.open("/log.txt", FILE_APPEND); // append explícito
+            if (sdFile) {
+                sdFile.println(entry);
+                sdFile.flush();  // força escrita imediata
+                sdFile.close();
+            } else {
+                Serial.println("Erro ao abrir /log.txt no SD");
+            }
+        } else {
+            Serial.println("SD não inicializado ao escrever log");
         }
 
+        // ---------------- SSE ----------------
         events.send(entry.c_str(), "message", millis());
     }
 
@@ -135,7 +150,7 @@
     // --------------------
     // Callback ESP-NOW
     // --------------------
-    void onDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+    void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
         if (len != sizeof(SensorData)) return;
         SensorData data;
         memcpy(&data, incomingData, sizeof(SensorData));
@@ -155,20 +170,19 @@
     // Rota web /log
     // --------------------
     void handleLog(AsyncWebServerRequest *request) {
+    // Primeiro tenta no LittleFS
         if (LittleFS.exists("/log.txt")) {
-            File logFile = LittleFS.open("/log.txt", "r");
-            request->send(logFile, "/log.txt", "text/plain", true); // 'true' habilita download
-            logFile.close();
+            request->send(LittleFS, "/log.txt", "text/plain", true); // true habilita download
             return;
         }
 
+        // Depois tenta no SD
         if (SD.exists("/log.txt")) {
-            File sdFile = SD.open("/log.txt", "r");
-            request->send(sdFile, "/log.txt", "text/plain", true);
-            sdFile.close();
+            request->send(SD, "/log.txt", "text/plain", true); // true habilita download
             return;
         }
 
+        // Se não existir em nenhum dos dois, retorna mensagem
         request->send(200, "text/plain", "Nenhum log encontrado.");
     }
 
@@ -179,38 +193,65 @@
         Serial.begin(115200);
         pinMode(FLASH_BTN, INPUT_PULLUP);
 
+        // --------------------
+        // RTC
+        // --------------------
         if (!rtc.begin()) {
             Serial.println("Erro: RTC DS1307 não encontrado!");
             while (1);
         }
 
+        // --------------------
+        // LittleFS
+        // --------------------
         if (!LittleFS.begin()) {
-            Serial.println("Falha ao montar LittleFS");
-            return;
+            Serial.println("Falha ao montar LittleFS, tentando formatar...");
+            if (!LittleFS.begin(true)) {
+                Serial.println("Erro crítico: não foi possível montar LittleFS");
+                while (1);
+            } else {
+                Serial.println("LittleFS formatado e montado com sucesso.");
+            }
+        } else {
+            Serial.println("LittleFS montado com sucesso.");
         }
 
+        // --------------------
+        // SD Card
+        // --------------------
         if (!SD.begin(SD_CS_PIN)) {
             Serial.println("Falha ao inicializar o cartão SD.");
         } else {
             Serial.println("Cartão SD pronto.");
         }
 
+        // --------------------
+        // Sensor DS18B20
+        // --------------------
         sensors.begin();
-        sensors.setResolution(12);
+        sensors.setResolution(12);  // 12 bits, conversão ~750ms
 
+        // --------------------
+        // Inicializa estados das estações
+        // --------------------
         for (int i = 0; i < QTDE_TX; i++) {
             strncpy(stationStates[i].nome, expectedNames[i], sizeof(stationStates[i].nome));
             stationStates[i].lowAlert = false;
             stationStates[i].highAlert = false;
         }
 
+        // --------------------
+        // Wi-Fi AP+STA
+        // --------------------
         WiFi.mode(WIFI_AP_STA);
         WiFi.softAP("RECEPTOR", "12345678");
-        WiFi.disconnect();
         Serial.print("AP iniciado. Conecte-se em: ");
         Serial.println(WiFi.softAPIP());
 
-        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        // --------------------
+        // Webserver e SSE
+        // --------------------
+        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
             String html = R"rawliteral(
                 <!DOCTYPE html>
                 <html>
@@ -234,7 +275,7 @@
 
                         source.onmessage = function(event) {
                             logDiv.innerHTML += event.data + '<br>';
-                            logDiv.scrollTop = logDiv.scrollHeight; // rola para o final
+                            logDiv.scrollTop = logDiv.scrollHeight;
                         };
 
                         source.onerror = function(err) {
@@ -249,10 +290,12 @@
         });
 
         server.addHandler(&events);
-
         server.on("/log", HTTP_GET, handleLog);
         server.begin();
 
+        // --------------------
+        // ESP-NOW
+        // --------------------
         if (esp_now_init() != ESP_OK) {
             Serial.println("Erro ESP-NOW");
             return;
@@ -262,7 +305,14 @@
         Serial.println("Pronto para receber dados...");
     }
 
+    // --------------------
+    // Loop principal
+    // --------------------
+    unsigned long lastTempRead = 0;
+
     void loop() {
+        unsigned long now = millis();
+
         // Botão FLASH para zerar log
         if (digitalRead(FLASH_BTN) == LOW) {
             Serial.println("Botão FLASH pressionado: log zerado.");
@@ -271,13 +321,16 @@
             delay(500);
         }
 
-        if (!waitingBlock) {
+        // Log do ambiente (DS18B20) a cada intervalo definido
+        if (!waitingBlock && (now - lastTempRead > TIMEOUT_MS)) {
             logAmbient();
-            lastRecvTime = millis();
+            lastTempRead = now;
+            lastRecvTime = now;
         }
 
+        // Fechamento do bloco quando todas estações enviaram ou timeout
         if (waitingBlock) {
-            if (receivedCount >= QTDE_TX || millis() - lastRecvTime > TIMEOUT_MS) {
+            if (receivedCount >= QTDE_TX || now - lastRecvTime > TIMEOUT_MS) {
                 closeBlock();
             }
         }
