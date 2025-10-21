@@ -30,6 +30,11 @@
     void setup() {
         Serial.begin(115200);
 
+        sensors.begin();
+        sensors.setResolution(12);
+        sensors.requestTemperatures();
+        float temp = sensors.getTempCByIndex(0);
+
         WiFi.mode(WIFI_AP_STA);
         WiFi.disconnect();
 
@@ -41,16 +46,13 @@
         esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
         esp_now_add_peer(mac_rx, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
 
-        sensors.begin();
-        sensors.setResolution(12); // máxima precisão
-
         SensorData data = {};
         strncpy(data.nome_tx, TX_ID, sizeof(data.nome_tx));
         data.nome_tx[sizeof(data.nome_tx)-1] = '\0';
 
         // Faz a leitura do sensor
         sensors.requestTemperatures();
-        float temp = sensors.getTempCByIndex(0);
+        temp = sensors.getTempCByIndex(0);
         temp = round(temp * 100.0) / 100.0;
 
         data.temp = temp;
